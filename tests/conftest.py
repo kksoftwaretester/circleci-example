@@ -16,6 +16,7 @@ def db(app):
         _db.create_all()
         yield _db
         _db.drop_all()
+        _db.engine.dispose()
 
 
 @pytest.fixture(autouse=True)
