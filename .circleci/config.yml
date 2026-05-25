@@ -95,7 +95,7 @@ jobs:
           name: Run tests
           command: |
             mkdir -p test-results
-            pytest --junitxml=test-results/junit.xml -p no:cov -p no:flask -v -s
+            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml -p no:flask -v
       - store_test_results:
           path: test-results
       - store_artifacts:

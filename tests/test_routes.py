@@ -1,5 +1,3 @@
-import pytest
-
 
 def test_healthz(client):
     resp = client.get("/healthz")
