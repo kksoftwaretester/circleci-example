@@ -29,29 +29,23 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - run:
-          name: Build image
+          name: Build production and tester images
           command: |
             IMAGE_TAG="app:${CIRCLE_SHA1}"
-            docker build -t "$IMAGE_TAG" .
+            docker build --target base   -t "$IMAGE_TAG"        .
+            docker build --target tester -t "${IMAGE_TAG}-test"  .
             echo "$IMAGE_TAG" > /tmp/image-tag.txt
       - run:
-          name: Validate container spec
+          name: Validate container spec with goss
           command: |
             IMAGE_TAG=$(cat /tmp/image-tag.txt)
             CID=$(docker run -d \
               -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/appdb \
-              "$IMAGE_TAG")
-            sleep 5
-
-            RUNNING=$(docker inspect --format='{{.State.Running}}' "$CID")
-            USER=$(docker exec "$CID" whoami)
-            PORT=$(docker exec "$CID" sh -c 'ss -tlnp 2>/dev/null | grep 5000 || netstat -tlnp 2>/dev/null | grep 5000 || echo "checking"')
-
+              "${IMAGE_TAG}-test")
+            docker exec "$CID" goss -g /goss.yaml validate --retry-timeout 30s --sleep 2s
+            EXIT_CODE=$?
             docker stop "$CID" && docker rm "$CID"
-
-            [ "$RUNNING" = "true" ] || { echo "FAIL: container not running"; exit 1; }
-            [ "$USER" = "appuser" ]  || { echo "FAIL: expected appuser, got $USER"; exit 1; }
-            echo "PASS: container running=$RUNNING, user=$USER"
+            exit $EXIT_CODE
       - run:
           name: Save image to workspace
           command: |
@@ -95,7 +89,7 @@ jobs:
           name: Run tests
           command: |
             mkdir -p test-results
-            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml -p no:flask -v
+            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml --cov-fail-under=80 -p no:flask -v
       - store_test_results:
           path: test-results/junit.xml
       - store_artifacts:
