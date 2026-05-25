@@ -17,8 +17,12 @@ def db(app):
     with app.app_context():
         _db.create_all()
         yield _db
+        print("\n[db teardown] starting")
+        print("[db teardown] calling drop_all")
         _db.drop_all()
+        print("[db teardown] drop_all done, calling dispose")
         _db.engine.dispose()
+        print("[db teardown] dispose done")
 
 
 @pytest.fixture(autouse=True)
