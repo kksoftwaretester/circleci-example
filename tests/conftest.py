@@ -12,32 +12,24 @@ def app():
     return application
 
 
-@pytest.fixture(scope="session")
-def db(app):
+@pytest.fixture(scope="session", autouse=True)
+def create_tables(app):
     with app.app_context():
         _db.create_all()
-        yield _db
-        print("\n[db teardown] starting")
-        print("[db teardown] calling drop_all")
+    yield
+    with app.app_context():
+        _db.session.remove()
         _db.drop_all()
-        print("[db teardown] drop_all done, calling dispose")
-        _db.engine.dispose()
-        print("[db teardown] dispose done")
 
 
 @pytest.fixture(autouse=True)
-def clean_tables(db):
+def clean_tables(app):
     yield
-    print("\n[clean_tables] starting teardown")
-    print("[clean_tables] acquiring connection")
-    with db.engine.connect() as conn:
-        print("[clean_tables] got connection, deleting rows")
-        for table in reversed(db.metadata.sorted_tables):
-            print(f"[clean_tables] deleting from {table.name}")
-            conn.execute(table.delete())
-        print("[clean_tables] committing")
-        conn.commit()
-    print("[clean_tables] done")
+    with app.app_context():
+        for table in reversed(_db.metadata.sorted_tables):
+            _db.session.execute(table.delete())
+        _db.session.commit()
+        _db.session.remove()
 
 
 @pytest.fixture()
