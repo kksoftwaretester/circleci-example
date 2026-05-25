@@ -97,7 +97,7 @@ jobs:
             mkdir -p test-results
             pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml -p no:flask -v
       - store_test_results:
-          path: test-results
+          path: test-results/junit.xml
       - store_artifacts:
           path: test-results
           destination: test-results
