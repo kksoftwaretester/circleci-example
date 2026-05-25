@@ -24,10 +24,16 @@ def db(app):
 @pytest.fixture(autouse=True)
 def clean_tables(db):
     yield
+    print("\n[clean_tables] starting teardown")
+    print("[clean_tables] acquiring connection")
     with db.engine.connect() as conn:
+        print("[clean_tables] got connection, deleting rows")
         for table in reversed(db.metadata.sorted_tables):
+            print(f"[clean_tables] deleting from {table.name}")
             conn.execute(table.delete())
+        print("[clean_tables] committing")
         conn.commit()
+    print("[clean_tables] done")
 
 
 @pytest.fixture()
