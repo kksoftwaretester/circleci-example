@@ -1,0 +1,19 @@
+port:
+  tcp:5000:
+    listening: true
+
+http:
+  http://localhost:5000/healthz:
+    status: 200
+    body:
+      - "ok"
+
+user:
+  appuser:
+    exists: true
+    uid: 1000
+    gid: 1000
+
+process:
+  flask:
+    running: true

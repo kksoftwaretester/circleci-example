@@ -1,0 +1,193 @@
+version: 2.1
+
+orbs:
+  aws-cli: circleci/aws-cli@4.1
+  path-filtering: circleci/path-filtering@1.1
+
+# ─── Reusable definitions ────────────────────────────────────────────────────
+
+parameters:
+  run-build:
+    type: boolean
+    default: true
+
+executors:
+  docker-builder:
+    docker:
+      - image: cimg/base:current
+    resource_class: medium
+
+# ─── Jobs ────────────────────────────────────────────────────────────────────
+
+jobs:
+
+  # 1. Build the application Docker image and validate it with dgoss
+  build-app-image:
+    executor: docker-builder
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Build image
+          command: |
+            IMAGE_TAG="app:${CIRCLE_SHA1}"
+            docker build -t "$IMAGE_TAG" .
+            echo "$IMAGE_TAG" > /tmp/image-tag.txt
+      - run:
+          name: Install dgoss
+          command: |
+            curl -fsSL https://github.com/goss-org/goss/releases/latest/download/dgoss \
+              -o /usr/local/bin/dgoss
+            curl -fsSL https://github.com/goss-org/goss/releases/latest/download/goss-linux-amd64 \
+              -o /usr/local/bin/goss
+            chmod +x /usr/local/bin/dgoss /usr/local/bin/goss
+      - run:
+          name: Validate image with dgoss
+          command: |
+            IMAGE_TAG=$(cat /tmp/image-tag.txt)
+            GOSS_SLEEP=3 dgoss run \
+              -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/appdb \
+              "$IMAGE_TAG"
+      - run:
+          name: Save image to workspace
+          command: |
+            IMAGE_TAG=$(cat /tmp/image-tag.txt)
+            mkdir -p /tmp/workspace
+            docker save "$IMAGE_TAG" -o /tmp/workspace/app-image.tar
+            cp /tmp/image-tag.txt /tmp/workspace/image-tag.txt
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - app-image.tar
+            - image-tag.txt
+
+  # 2. Run pytest against the built image with a postgres sidecar
+  test:
+    docker:
+      - image: cimg/python:3.12
+        environment:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/appdb
+      - image: cimg/postgres:15.0
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: appdb
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/workspace
+      - run:
+          name: Install dependencies
+          command: pip install -r requirements.txt
+      - run:
+          name: Install postgresql-client (for pg_isready)
+          command: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+      - run:
+          name: Wait for postgres
+          command: |
+            export DB_HOST=localhost DB_PORT=5432 DB_TIMEOUT=30
+            bash scripts/wait-for-db.sh
+      - run:
+          name: Run tests
+          command: |
+            mkdir -p test-results
+            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml -v
+      - store_test_results:
+          path: test-results
+      - store_artifacts:
+          path: test-results
+          destination: test-results
+
+  # 3. Push the image to ECR (main branch only)
+  build-push-ecr:
+    executor: docker-builder
+    steps:
+      - checkout
+      - attach_workspace:
+          at: /tmp/workspace
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - aws-cli/setup:
+          role_arn: $AWS_ROLE_ARN
+          region: $AWS_REGION
+      - run:
+          name: Load image from workspace
+          command: docker load -i /tmp/workspace/app-image.tar
+      - run:
+          name: Tag and push to ECR
+          command: |
+            IMAGE_TAG=$(cat /tmp/workspace/image-tag.txt)
+            aws ecr get-login-password --region "$AWS_REGION" \
+              | docker login --username AWS --password-stdin "$ECR_REPO_URI"
+            docker tag "$IMAGE_TAG" "${ECR_REPO_URI}:${CIRCLE_SHA1}"
+            docker tag "$IMAGE_TAG" "${ECR_REPO_URI}:latest"
+            docker push "${ECR_REPO_URI}:${CIRCLE_SHA1}"
+            docker push "${ECR_REPO_URI}:latest"
+            echo "${ECR_REPO_URI}:${CIRCLE_SHA1}" | tee /tmp/ecr-image-uri.txt
+      - store_artifacts:
+          path: /tmp/ecr-image-uri.txt
+          destination: ecr-image-uri.txt
+
+  # 4. Deploy to ECS (main branch only, requires build-push-ecr)
+  deploy-ecs:
+    executor: docker-builder
+    steps:
+      - aws-cli/setup:
+          role_arn: $AWS_ROLE_ARN
+          region: $AWS_REGION
+      - run:
+          name: Deploy new image to ECS
+          command: |
+            aws ecs update-service \
+              --cluster "$ECS_CLUSTER" \
+              --service "$ECS_SERVICE" \
+              --force-new-deployment \
+              --region "$AWS_REGION"
+            aws ecs wait services-stable \
+              --cluster "$ECS_CLUSTER" \
+              --services "$ECS_SERVICE" \
+              --region "$AWS_REGION"
+
+# ─── Workflow ─────────────────────────────────────────────────────────────────
+
+workflows:
+  build-test-deploy:
+    when: << pipeline.parameters.run-build >>
+    jobs:
+      - build-app-image
+
+      - test:
+          requires:
+            - build-app-image
+
+      - build-push-ecr:
+          requires:
+            - test
+          context: circleci-oidc-aws
+          filters:
+            branches:
+              only: main
+
+      - deploy-ecs:
+          requires:
+            - build-push-ecr
+          context: circleci-oidc-aws
+          filters:
+            branches:
+              only: main
+
+  # Skip the full pipeline for docs-only changes
+  check-paths:
+    when:
+      not: << pipeline.parameters.run-build >>
+    jobs:
+      - path-filtering/filter:
+          base-revision: main
+          config-path: .circleci/config.yml
+          mapping: |
+            app/.*        run-build true
+            tests/.*      run-build true
+            scripts/.*    run-build true
+            Dockerfile    run-build true
+            requirements.txt run-build true
