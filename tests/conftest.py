@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy.pool import NullPool
 from app import create_app
 from app.models import db as _db
 
@@ -7,6 +8,7 @@ from app.models import db as _db
 def app():
     application = create_app()
     application.config["TESTING"] = True
+    application.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"poolclass": NullPool}
     return application
 
 
