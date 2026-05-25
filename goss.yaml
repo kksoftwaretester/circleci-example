@@ -15,5 +15,5 @@ user:
     gid: 1000
 
 process:
-  python3.12:
+  python:
     running: true
