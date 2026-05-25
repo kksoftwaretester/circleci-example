@@ -72,8 +72,6 @@ jobs:
           POSTGRES_DB: appdb
     steps:
       - checkout
-      - attach_workspace:
-          at: /tmp/workspace
       - restore_cache:
           keys:
             - pip-v1-{{ checksum "requirements.txt" }}
@@ -107,7 +105,6 @@ jobs:
   build-push-ecr:
     executor: docker-builder
     steps:
-      - checkout
       - attach_workspace:
           at: /tmp/workspace
       - setup_remote_docker:
