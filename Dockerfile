@@ -8,7 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app/ app/
 COPY app/main.py .
 
-RUN useradd --no-create-home --shell /bin/false appuser
+RUN useradd --uid 1000 --no-create-home --shell /bin/false appuser
 USER appuser
 
 EXPOSE 5000
