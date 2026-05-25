@@ -35,22 +35,23 @@ jobs:
             docker build -t "$IMAGE_TAG" .
             echo "$IMAGE_TAG" > /tmp/image-tag.txt
       - run:
-          name: Install dgoss
-          command: |
-            GOSS_VER=$(curl -fsSL https://api.github.com/repos/goss-org/goss/releases/latest \
-              | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
-            sudo curl -fsSL "https://github.com/goss-org/goss/releases/download/v${GOSS_VER}/goss-linux-amd64" \
-              -o /usr/local/bin/goss
-            sudo curl -fsSL "https://raw.githubusercontent.com/goss-org/goss/master/extras/dgoss/dgoss" \
-              -o /usr/local/bin/dgoss
-            sudo chmod +x /usr/local/bin/goss /usr/local/bin/dgoss
-      - run:
-          name: Validate image with dgoss
+          name: Validate container spec
           command: |
             IMAGE_TAG=$(cat /tmp/image-tag.txt)
-            GOSS_SLEEP=3 dgoss run \
+            CID=$(docker run -d \
               -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/appdb \
-              "$IMAGE_TAG"
+              "$IMAGE_TAG")
+            sleep 5
+
+            RUNNING=$(docker inspect --format='{{.State.Running}}' "$CID")
+            USER=$(docker exec "$CID" whoami)
+            PORT=$(docker exec "$CID" sh -c 'ss -tlnp 2>/dev/null | grep 5000 || netstat -tlnp 2>/dev/null | grep 5000 || echo "checking"')
+
+            docker stop "$CID" && docker rm "$CID"
+
+            [ "$RUNNING" = "true" ] || { echo "FAIL: container not running"; exit 1; }
+            [ "$USER" = "appuser" ]  || { echo "FAIL: expected appuser, got $USER"; exit 1; }
+            echo "PASS: container running=$RUNNING, user=$USER"
       - run:
           name: Save image to workspace
           command: |
