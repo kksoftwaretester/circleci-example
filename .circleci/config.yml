@@ -74,9 +74,16 @@ jobs:
       - checkout
       - attach_workspace:
           at: /tmp/workspace
+      - restore_cache:
+          keys:
+            - pip-v1-{{ checksum "requirements.txt" }}
       - run:
           name: Install dependencies
           command: pip install -r requirements.txt
+      - save_cache:
+          key: pip-v1-{{ checksum "requirements.txt" }}
+          paths:
+            - ~/.cache/pip
       - run:
           name: Install postgresql-client (for pg_isready)
           command: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
@@ -89,7 +96,7 @@ jobs:
           name: Run tests
           command: |
             mkdir -p test-results
-            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml --cov-fail-under=80 -p no:flask -v
+            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml --cov-fail-under=80 -x -v
       - store_test_results:
           path: test-results/junit.xml
       - store_artifacts:
