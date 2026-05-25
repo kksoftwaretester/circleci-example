@@ -37,11 +37,13 @@ jobs:
       - run:
           name: Install dgoss
           command: |
-            curl -fsSL https://github.com/goss-org/goss/releases/latest/download/dgoss \
-              -o /usr/local/bin/dgoss
-            curl -fsSL https://github.com/goss-org/goss/releases/latest/download/goss-linux-amd64 \
+            GOSS_VER=$(curl -fsSL https://api.github.com/repos/goss-org/goss/releases/latest \
+              | grep '"tag_name"' | sed 's/.*"v\([^"]*\)".*/\1/')
+            sudo curl -fsSL "https://github.com/goss-org/goss/releases/download/v${GOSS_VER}/goss-linux-amd64" \
               -o /usr/local/bin/goss
-            chmod +x /usr/local/bin/dgoss /usr/local/bin/goss
+            sudo curl -fsSL "https://raw.githubusercontent.com/goss-org/goss/master/extras/dgoss/dgoss" \
+              -o /usr/local/bin/dgoss
+            sudo chmod +x /usr/local/bin/goss /usr/local/bin/dgoss
       - run:
           name: Validate image with dgoss
           command: |
