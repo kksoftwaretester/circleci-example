@@ -132,6 +132,14 @@ Issues an `aws ecs update-service --force-new-deployment` command, which trigger
 | **Coverage enforcement** | `--cov-fail-under=80` in `integration-test` | Coverage below 80% fails the build before it reaches production |
 | **Multi-stage Docker build** | `Dockerfile` | Test tooling stays out of the production image |∂ƒƒ
 
+## Why CircleCI?
+
+While this is a simple reference pipeline, it's still clear what CircleCI beings to the table. Namely:
+- **Docker as a first-class citizen.** CircleCI's executor model treats Docker as a core primitive. There are no agents to maintain and no runner infrastructure to manage. `setup_remote_docker` gives every job an isolated Docker daemon with layer caching in a single line. The `cimg/` convenience images are CircleCI-maintained and kept current, so teams don't need to maintain their own base images.
+- **Orbs eliminate boilerplate.** The entire AWS auth and ECR push flow in `build-push-ecr` is a single `aws-cli/setup` step rather than 30+ lines of shell. Orbs are versioned and composable. Organizations publish internal orbs to standardise patterns across every pipeline and update them in one place.
+- **Test insights are native.** `store_test_results` surfaces per-test timing, pass/fail history, and automatic flaky test detection in the CircleCI UI with no third-party tooling. CircleCI uses this data to power intelligent test splitting across parallel containers.
+- **OIDC eliminates credential management.** There are no stored AWS credentials anywhere in this pipeline. CircleCI's native OIDC federation with AWS, GCP, and Azure issues short-lived credentials per build automatically. This means no rotation and a limited blast radius from a leaked log.
+
 ## Potential Future Optimisations and Trade-offs
 
 ### Test parallelism
