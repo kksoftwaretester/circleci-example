@@ -59,8 +59,35 @@ jobs:
             - app-image.tar
             - image-tag.txt
 
-  # 2. Run pytest against the built image with a postgres sidecar
-  test:
+  # 2a. Run unit tests with mocks (no database required)
+  unit-test:
+    docker:
+      - image: cimg/python:3.12
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - pip-v1-{{ checksum "requirements.txt" }}
+      - run:
+          name: Install dependencies
+          command: pip install -r requirements.txt
+      - save_cache:
+          key: pip-v1-{{ checksum "requirements.txt" }}
+          paths:
+            - ~/.cache/pip
+      - run:
+          name: Run unit tests
+          command: |
+            mkdir -p test-results
+            pytest tests/unit/ --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml -x -v -p no:flask
+      - store_test_results:
+          path: test-results/junit.xml
+      - store_artifacts:
+          path: test-results
+          destination: test-results
+
+  # 2b. Run integration tests against a real PostgreSQL sidecar
+  integration-test:
     docker:
       - image: cimg/python:3.12
         environment:
@@ -91,10 +118,10 @@ jobs:
             export DB_HOST=localhost DB_PORT=5432 DB_TIMEOUT=30
             bash scripts/wait-for-db.sh
       - run:
-          name: Run tests
+          name: Run integration tests
           command: |
             mkdir -p test-results
-            pytest --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml --cov-fail-under=80 -x -v
+            pytest tests/integration/ --junitxml=test-results/junit.xml --cov=app --cov-report=xml:test-results/coverage.xml --cov-fail-under=80 -x -v -p no:flask
       - store_test_results:
           path: test-results/junit.xml
       - store_artifacts:
@@ -158,13 +185,16 @@ workflows:
     jobs:
       - build-app-image
 
-      - test:
+      - unit-test
+
+      - integration-test:
           requires:
             - build-app-image
+            - unit-test
 
       - build-push-ecr:
           requires:
-            - test
+            - integration-test
           context: circleci-oidc-aws
           filters:
             branches:
