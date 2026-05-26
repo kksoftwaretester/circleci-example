@@ -33,9 +33,9 @@ Since I'm familiar with these frameworks and they are supported by CircleCI, it 
 ## Pipeline Architecture
 
 ```
-unit-test ───────────────────┐
-                             ├──► integration-test ──► build-push-ecr ──► deploy-ecs
-build-app-image ─────────────┘        (main only)        (main only)
+unit-test ────────┐
+                  ├──► integration-test ──► build-push-ecr ──► deploy-ecs
+build-app-image ──┘        (main only)        (main only)
 ```
 
 `unit-test` and `build-app-image` run in parallel from the moment a push lands. `integration-test` waits for both to pass before starting — meaning a unit test failure stops the pipeline before it ever spins up a database sidecar or builds a container.
@@ -86,7 +86,7 @@ Test results are exported as **JUnit XML** and uploaded with `store_test_results
 
 **Why a real database in integration tests?** Mocking the database is the most common source of "tests pass but production breaks" failures. SQLAlchemy queries that work against a mock may fail against a real engine because mocks don't enforce types or constraints, and mode the actual transaction behaviour of the database. Testing against the real thing removes this category of bug entirely.
 
-**Why `store_test_results`?** CircleCI uses the JUnit output to surface test insights in the UI, power the "Flaky Tests" detection feature, and enable intelligent test splitting for parallelism (a future optimisation described below).
+**Why `store_test_results`?** CircleCI uses the JUnit output to surface test insights in the UI, power the "Flaky Tests" detection feature, and enable intelligent test splitting for parallelism (a future optimization described below).
 
 **The test pyramid in practice:** Unit tests cover behaviour; integration tests cover correctness against real infrastructure. The two jobs together enforce a structured test pyramid. The fast tier (unit) gates the slow tier (integration), so developers get failure feedback in seconds rather than waiting for a database sidecar to start.
 
@@ -98,8 +98,8 @@ This job attaches the workspace, loads the pre-built Docker image, and pushes it
 
 Authentication to AWS uses **OIDC (OpenID Connect)** via the `aws-cli` orb. There are no AWS access keys stored anywhere in CircleCI. Instead:
 
-1. CircleCI generates a short-lived, signed OIDC token scoped to this specific organisation, project, and build.
-2. AWS IAM is configured to trust CircleCI as an identity provider. The IAM role's trust policy restricts assumption to tokens from this specific CircleCI organisation.
+1. CircleCI generates a short-lived, signed OIDC token scoped to this specific organization, project, and build.
+2. AWS IAM is configured to trust CircleCI as an identity provider. The IAM role's trust policy restricts assumption to tokens from this specific CircleCI organization.
 3. The `aws-cli` orb exchanges the token for temporary AWS credentials valid only for the duration of the job.
 
 If credentials are leaked or a build is compromised, the credentials expire within minutes and cannot be reused. Rotating them requires no action — there is nothing to rotate.
@@ -140,7 +140,7 @@ While this is a simple reference pipeline, it's still clear what CircleCI beings
 - **Test insights are native.** `store_test_results` surfaces per-test timing, pass/fail history, and automatic flaky test detection in the CircleCI UI with no third-party tooling. CircleCI uses this data to power intelligent test splitting across parallel containers.
 - **OIDC eliminates credential management.** There are no stored AWS credentials anywhere in this pipeline. CircleCI's native OIDC federation with AWS, GCP, and Azure issues short-lived credentials per build automatically. This means no rotation and a limited blast radius from a leaked log.
 
-## Potential Future Optimisations and Trade-offs
+## Potential Future Optimizations and Trade-offs
 
 ### Test parallelism
 As the test suite grows, test time grows linearly. CircleCI supports splitting tests across multiple parallel containers using `circleci tests split` with timing data from previous runs. Combined with `pytest-xdist` for in-process parallelism, a suite that takes 5 minutes can be reduced to under 1 minute. This optimization is essential to most CircleCI customers, given the number of tests they have. For this simple example app, it would be overkill.
